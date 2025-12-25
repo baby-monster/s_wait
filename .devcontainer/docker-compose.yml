@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  # 開発コンテナ (Node.js + Python)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ../..:/workspaces:cached
+      - commandhistory:/commandhistory
+    command: sleep infinity
+    ports:
+      - "3000:3000"  # Next.js
+      - "8000:8000"  # FastAPI
+    networks:
+      - dev-network
+    environment:
+      DATABASE_URL: mysql+aiomysql://queueuser:queuepass@db:3306/queue_system
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306
+      MYSQL_USER: queueuser
+      MYSQL_PASSWORD: queuepass
+      MYSQL_DATABASE: queue_system
+
+volumes:
+  commandhistory:
+
+networks:
+  dev-network:
+    external: true

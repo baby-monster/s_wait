@@ -1,0 +1,87 @@
+# 本番環境用のDocker Compose設定
+#
+# 開発環境では .devcontainer/docker-compose.yml を使用してください
+# VS CodeのDev Containersを使う場合は、このファイルは使用されません
+#
+# 本番環境での起動: docker-compose up -d
+# 開発環境での起動: VS CodeでDev Containerを開く
+
+version: '3.8'
+
+services:
+  # MySQL Database
+  db:
+    image: mysql:8.0
+    container_name: queue_system_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-queue_system}
+      MYSQL_USER: ${MYSQL_USER:-queueuser}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-queuepass}
+      TZ: Asia/Tokyo
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - queue_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: queue_system_backend
+    restart: always
+    environment:
+      DATABASE_URL: mysql+aiomysql://${MYSQL_USER:-queueuser}:${MYSQL_PASSWORD:-queuepass}@db:3306/${MYSQL_DATABASE:-queue_system}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      TZ: Asia/Tokyo
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    networks:
+      - queue_network
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Next.js Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: queue_system_frontend
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8000}
+      TZ: Asia/Tokyo
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    networks:
+      - queue_network
+    depends_on:
+      - backend
+    command: npm run dev
+
+volumes:
+  mysql_data:
+
+networks:
+  queue_network:
+    driver: bridge
